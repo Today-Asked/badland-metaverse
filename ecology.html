@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ecology</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.1/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.1/dist/leaflet.markercluster.js"></script>
+    <style>
+      button {
+        background: none!important;
+        border: none;
+        padding: 0!important;
+        /*optional*/
+        font-family: arial, sans-serif;
+        /*input has OS specific font-family*/
+        color: #069;
+        text-decoration: underline;
+        cursor: pointer;
+      }
+
+      body{
+        width: 100%;
+        height: 100%;
+      }
+      
+      /*hide scroll bar*/
+      *{
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+      *::-webkit-scrollbar {
+        display: none;
+      }
+    </style>
+    
+    <script>      
+      function external_link(button){
+        var buttonText = button.innerText;
+        var url = "https://sites.google.com/view/zjmetaverse/物種圖鑑/" + buttonText;
+        window.open(url, "_blank");
+      }
+
+      const BATCH_SIZE = 20;
+      const BATCHES_PER_ITERATION = 20;
+
+      (async function (){
+          const TOTAL_DATA_COUNT = await new Promise((resolve) => {
+              google.script.run.withSuccessHandler((count) => {
+                  resolve(count);
+              }).getTotalDataCount();
+          });
+
+          const TOTAL_BATCH_COUNT = Math.ceil(TOTAL_DATA_COUNT / BATCH_SIZE);
+    
+          const getAsyncBatchData = async (startIdx, batchNum) => {
+              let promises = [];
+              for (let i = 0; i < batchNum; i++) {
+                const promise = new Promise((resolve) => {
+                  google.script.run.withSuccessHandler((bird_batch) => {
+                      const isConcatSuccess = concatToBirds(bird_batch);
+                      resolve(isConcatSuccess);
+                  }).getDataFromTableInBatch(startIdx+i*BATCH_SIZE, BATCH_SIZE);
+                }).then((isConcatSuccess)=>{
+                  console.log("concat success: ", isConcatSuccess);
+                  return isConcatSuccess;
+                });
+
+                promises.push(promise);
+              }
+              // 等待所有的Promise都被解决
+              const results = await Promise.all(promises);
+              // 合併所有batch的數據
+              return results.flat();
+          };
+          for (let startBatchIdx = 0; startBatchIdx < TOTAL_BATCH_COUNT; startBatchIdx += BATCHES_PER_ITERATION) {
+              birds['features'] = [];
+              const remainingBatchNum = calRemainBatch(startBatchIdx, TOTAL_BATCH_COUNT, BATCHES_PER_ITERATION)
+              const startDataIdx = startBatchIdx*BATCH_SIZE;
+              const batchDataOfAnIteration = await getAsyncBatchData(startDataIdx, remainingBatchNum);
+              addPointToMap(birds);
+          }
+          
+            // 1168筆資料，每個batch有20筆資料，總共有59個batch。一次將20*20=400個點放上地圖，避免地圖載入過久
+          })()
+
+      var birds = {
+        "type": "FeatureCollection",
+        "features": []
+      };
+
+      function concatToBirds(bird_batch){
+        console.log(bird_batch)
+        if (bird_batch == null) return false; 
+        birds['features'] = birds['features'].concat(bird_batch);
+        return true;
+      }
+
+      function addPointToMap(birds){
+        bird_geo=L.geoJSON(birds,{
+            onEachFeature:(feature,layer)=>{
+              layer.bindPopup(
+                '<b>物種名稱： <button onclick="external_link(this)">' + feature.properties['species'] + '</button></b><br>'
+                + '<img src=' +  bird_url[feature.properties['species']] + " width=200>"
+              )
+            }
+          })
+        let markersCluster = L.markerClusterGroup().addLayer(bird_geo).addTo(map);
+        console.log("add points to map");
+      }
+
+      function calRemainBatch(startBatchIdx, totalBatchCount, batchesPerIter){
+        let remainingBatches = totalBatchCount - startBatchIdx;
+        return Math.min(batchesPerIter, remainingBatches);
+      }
+    </script>
+</head>
+<body>
+    <div id="map" style="height: 100vh; width: 100vw">
+      <script>
+        //創建地圖
+        map = L.map('map').setView([23.013309517678845, 120.4167566997621], 13);
+          L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              maxZoom: 17,
+              attribution: '© OpenStreetMap'
+          }).addTo(map);
+        console.log("create map");
+
+        bird_url = {'斑文鳥':"https://hackmd.io/_uploads/BJBenlDN0.jpg",
+                    '大卷尾':'https://hackmd.io/_uploads/ryrx2lPVR.jpg',
+                    '小彎嘴':'https://hackmd.io/_uploads/ryrxngPVR.jpg',
+                    '白頭翁':'https://hackmd.io/_uploads/HyAb3xDVR.jpg',
+                    '紅鳩':'https://hackmd.io/_uploads/ryBgnlPEA.jpg',
+                    '五色鳥':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '樹鵲':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '小白鷺':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '山紅頭':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '洋燕':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '貢德氏赤蛙':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '大彎嘴':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '赤腹松鼠':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '黑枕藍鶲':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '家燕':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '小雨燕':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '棕背伯勞':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '紅嘴黑鵯':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '竹雞':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '領角鴞':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '鼬獾':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '珠頸斑鳩':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '白鶺鴒':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '薑弄蝶':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '白尾八哥':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '栗尾椋鳥':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '虎皮蛙':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '白腰鵲鴝':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '鳳頭蒼鷹':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '麻雀':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '小卷尾':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '紅尾伯勞':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '綠鳩':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '細帶環蛺蝶':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '蛇眼蛺蝶':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '小紅蜻蜓':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '大鳳蝶':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '義大利蜂':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '紫斑蝶':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '白鼻心':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '淡黃碟':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '小雨蛙':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '白環鸚嘴鵯':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '大白鷺':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '白腰文鳥':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '灰鶺鴒':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '大冠鷲':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '麗紋石龍子':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '鵲鴝':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '龜殼花':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '黑眶蟾蜍':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '印度蜓蜥':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '家八哥':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '臺灣獼猴':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '青帶鳳蝶':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '直翅斜紋天蛾':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '台灣油點草':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '疑似穿山甲洞':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '岩生秋海棠':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '極北柳鶯':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '山羊腳印':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '山豬':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '朱鸝':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '灰頭鷦鶯':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '綠繡眼':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '台灣草蜥':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '翠翼鳩':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '斯文豪氏攀蜥':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '繡眼畫眉':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '姬蛇目蝶':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '三線蝶':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '樺斑蝶':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '玉帶蔭蝶':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '翠鳥':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '巴西龜':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '鴿子':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '小啄木':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '斑龜':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '食蟹獴':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '黃頭鷺':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '灰喉山椒鳥':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '黑冠麻鷺':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                    '黃尾鴝':'https://hackmd.io/_uploads/BJbj1Ru4R.jpg',
+                  };
+      </script>
+    </div>
+
+</body>
+</html>
